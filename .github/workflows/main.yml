@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run script
-        env:
+    env:
           POSTHOG_URL: https://posthog.wachanga.com/      # ⚠️ Замени на свой URL
           INSIGHT_ID: 'F293UKTa'                           # ⚠️ Замени на ID своего графика
           API_KEY: ${{ secrets.API_KEY }}            # Не меняй — будет из секретов
