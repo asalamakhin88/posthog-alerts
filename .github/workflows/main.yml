@@ -1,0 +1,99 @@
+name: Check PostHog Insight
+
+on:
+  workflow_dispatch:  # Позволяет запускать вручную
+  schedule:
+    - cron: '*/5 * * * *'  # Каждые 5 минут
+
+jobs:
+  check-insight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run script
+        env:
+          POSTHOG_URL: https://posthog.wachanga.com/      # ⚠️ Замени на свой URL
+          INSIGHT_ID: 'F293UKTa'                           # ⚠️ Замени на ID своего графика
+          API_KEY: ${{ secrets.API_KEY }}            # Не меняй — будет из секретов
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}  # Не меняй
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}  # Не меняй
+        run: |
+          # Установим зависимости
+          pip3 install requests
+
+          # Запустим скрипт
+          python3 -c "
+          import requests
+          import json
+          import os
+          from datetime import datetime
+
+          # === Данные из секретов ===
+          POSTHOG_URL = os.getenv('POSTHOG_URL')
+          INSIGHT_ID = os.getenv('INSIGHT_ID')
+          API_KEY = os.getenv('API_KEY')
+          TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+          TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+          # Файл для хранения предыдущего значения
+          STATE_FILE = '/tmp/state.json'
+
+          def send_telegram(text):
+              url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
+              data = {'chat_id': TELEGRAM_CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
+              requests.post(url, data=data)
+
+          try:
+              # Получаем данные из PostHog
+              url = f'{POSTHOG_URL}/api/projects/@current/insights/{INSIGHT_ID}/'
+              headers = {'Authorization': f'Bearer {API_KEY}'}
+              params = {'refresh': 'true'}
+              response = requests.get(url, headers=headers, params=params)
+
+              if response.status_code != 200:
+                  send_telegram('🔴 Ошибка: не удалось получить данные из PostHog')
+                  exit()
+
+              data = response.json()
+              series = data['result'][0]['data']
+              if not series:
+                  send_telegram('🟡 Нет данных в графике')
+                  exit()
+
+              # Берем последнее значение (сейчас)
+              current_value = series[-1]
+
+              # Читаем предыдущее значение
+              last_value = None
+              if os.path.exists(STATE_FILE):
+                  try:
+                      with open(STATE_FILE, 'r') as f:
+                          last_value = json.load(f)['value']
+                  except:
+                      pass
+
+              # Сохраняем текущее значение
+              with open(STATE_FILE, 'w') as f:
+                  json.dump({'value': current_value, 'time': datetime.now().isoformat()}, f)
+
+              # Если это первый запуск — выходим
+              if last_value is None:
+                  print('Первый запуск. Ничего не отправляем.')
+                  exit()
+
+              # Проверяем падение >10%
+              if current_value < last_value * 0.9:  # падение больше 10%
+                  percent_drop = (1 - current_value / last_value) * 100
+                  message = f'''
+🚨 <b>Сильное падение метрики!</b>
+
+📉 Формула в PostHog упала на <b>{percent_drop:.1f}%</b>
+🔢 Было: {last_value:.3f}
+🔢 Стало: {current_value:.3f}
+
+🕒 Время: {datetime.now().strftime('%H:%M:%S')}
+                  '''
+                  send_telegram(message)
+
+          except Exception as e:
+              send_telegram(f'🔴 Ошибка скрипта: {str(e)}')
+          "
