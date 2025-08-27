@@ -85,7 +85,6 @@ jobs:
                   percent_drop = (1 - current_value / last_value) * 100
                   message = f'''
 🚨 <b>Сильное падение метрики!</b>
-
 📉 Формула в PostHog упала на <b>{percent_drop:.1f}%</b>
 🔢 Было: {last_value:.3f}
 🔢 Стало: {current_value:.3f}
