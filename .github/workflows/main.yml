@@ -1,84 +1,83 @@
 name: Check PostHog Insight
 
 on:
-  workflow_dispatch:  # Позволяет запускать вручную
+  workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'  # Каждые 5 минут
+    - cron: '*/5 * * * *'
 
 jobs:
   check-insight:
     runs-on: ubuntu-latest
     steps:
       - name: Run script
-    env:
-          POSTHOG_URL: https://posthog.wachanga.com/      # ⚠️ Замени на свой URL
-          INSIGHT_ID: 'F293UKTa'                           # ⚠️ Замени на ID своего графика
-          API_KEY: ${{ secrets.API_KEY }}            # Не меняй — будет из секретов
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}  # Не меняй
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}  # Не меняй
-              run: |
-        pip3 install requests
+        env:
+          POSTHOG_URL: https://posthog.wachanga.com/
+          INSIGHT_ID: 'F293UKTa'
+          API_KEY: ${{ secrets.API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          pip3 install requests
+          python3 -c "
+          import requests
+          import json
+          import os
+          from datetime import datetime
 
-        python3 -c "
-        import requests
-        import json
-        import os
-        from datetime import datetime
+          POSTHOG_URL = os.getenv('POSTHOG_URL')
+          INSIGHT_ID = os.getenv('INSIGHT_ID')
+          API_KEY = os.getenv('API_KEY')
+          TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+          TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-        POSTHOG_URL = os.getenv('POSTHOG_URL')
-        INSIGHT_ID = os.getenv('INSIGHT_ID')
-        API_KEY = os.getenv('API_KEY')
-        TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-        TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+          STATE_FILE = '/tmp/state.json'
 
-        STATE_FILE = '/tmp/state.json'
+          def send_telegram(text):
+              url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
+              data = {'chat_id': TELEGRAM_CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
+              try:
+                  requests.post(url, data=data)
+              except:
+                  pass
 
-        def send_telegram(text):
-            url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
-            data = {'chat_id': TELEGRAM_CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
-            try:
-                requests.post(url, data=data)
-            except:
-                pass
+          try:
+              url = f'{POSTHOG_URL}/api/projects/@current/insights/{INSIGHT_ID}/'
+              headers = {'Authorization': f'Bearer {API_KEY}'}
+              params = {'refresh': 'true'}
+              response = requests.get(url, headers=headers, params=params)
 
-        try:
-            url = f'{POSTHOG_URL}/api/projects/@current/insights/{INSIGHT_ID}/'
-            headers = {'Authorization': f'Bearer {API_KEY}'}
-            params = {'refresh': 'true'}
-            response = requests.get(url, headers=headers, params=params)
+              if response.status_code != 200:
+                  send_telegram('🔴 Ошибка: не удалось получить данные из PostHog')
+                  exit()
 
-            if response.status_code != 200:
-                send_telegram('🔴 Ошибка: не удалось получить данные из PostHog')
-                exit()
+              data = response.json()
+              series = data['result'][0]['data']
+              if not series:
+                  send_telegram('🟡 Нет данных в графике')
+                  exit()
 
-            data = response.json()
-            series = data['result'][0]['data']
-            if not series:
-                send_telegram('🟡 Нет данных в графике')
-                exit()
+              current_value = series[-1]
 
-            current_value = series[-1]
+              last_value = None
+              if os.path.exists(STATE_FILE):
+                  try:
+                      with open(STATE_FILE, 'r') as f:
+                          last_value = json.load(f)['value']
+                  except:
+                      pass
 
-            last_value = None
-            if os.path.exists(STATE_FILE):
-                try:
-                    with open(STATE_FILE, 'r') as f:
-                        last_value = json.load(f)['value']
-                except:
-                    pass
+              with open(STATE_FILE, 'w') as f:
+                  json.dump({'value': current_value, 'time': datetime.now().isoformat()}, f)
 
-            with open(STATE_FILE, 'w') as f:
-                json.dump({'value': current_value, 'time': datetime.now().isoformat()}, f)
+              if last_value is None:
+                  print('Первый запуск — сохраняем значение.')
+                  exit()
 
-            if last_value is None:
-                print('Первый запуск — сохраняем значение.')
-                exit()
+              if current_value < last_value * 0.9:
+                  percent_drop = (1 - current_value / last_value) * 100
+                  message = f'🚨 <b>Сильное падение метрики!</b>%0A%0A📉 Упала на <b>{percent_drop:.1f}%</b>%0A🔢 Было: {last_value:.3f}%0A🔢 Стало: {current_value:.3f}%0A🕒 {datetime.now().strftime(\"%H:%M:%S\")}'
+                  send_telegram(message)
 
-            if current_value < last_value * 0.9:
-                percent_drop = (1 - current_value / last_value) * 100
-                message = f'🚨 <b>Сильное падение метрики!</b>%0A%0A📉 Упала на <b>{percent_drop:.1f}%</b>%0A🔢 Было: {last_value:.3f}%0A🔢 Стало: {current_value:.3f}%0A🕒 {datetime.now().strftime(\"%H:%M:%S\")}'
-                send_telegram(message)
-
-        except Exception as e:
-            send_telegram(f'🔴 Ошибка: {str(e)}')
-        "
+          except Exception as e:
+              send_telegram(f'🔴 Ошибка: {str(e)}')
+          "
