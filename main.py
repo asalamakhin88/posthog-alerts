@@ -174,8 +174,8 @@ def cmd_stats(m):
         msg += f"  🔄 Всего: {button_total}\n"
         msg += f"  👤 Уникальных: {button_unique}\n\n"
         msg += "<b>📈 Всего:</b>\n"
-        msg += f"  🔄 <b>{total}</b>\n"
-        msg += f"  👤 <b>{unique}</b>"
+        msg += f"  🔄 Всего: <b>{total}</b>\n"
+        msg += f"  👤 Уникальных: <b>{unique}</b>"
         
         bot.reply_to(m, msg, parse_mode="HTML")
 
@@ -194,8 +194,8 @@ def cmd_today(m):
         msg += f"  🔄 Всего: {stats['button_total']}\n"
         msg += f"  👤 Уникальных: {stats['button_unique']}\n\n"
         msg += "<b>📈 Всего:</b>\n"
-        msg += f"  🔄 <b>{stats['total']}</b>\n"
-        msg += f"  👤 <b>{stats['unique']}</b>"
+        msg += f"  🔄 Всего: <b>{total}</b>\n"
+        msg += f"  👤 Уникальных: <b>{unique}</b>"
         
         bot.reply_to(m, msg, parse_mode="HTML")
 
