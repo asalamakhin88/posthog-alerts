@@ -89,12 +89,8 @@ def get_stats(start_date, end_date):
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return {
-            'total': 0, 
-            'unique': 0, 
-            'auto_total': 0, 
-            'auto_unique': 0, 
-            'button_total': 0, 
-            'button_unique': 0
+            'total': 0, 'unique': 0, 'auto_total': 0, 'auto_unique': 0, 
+            'button_total': 0, 'button_unique': 0
         }
 
 # 🔹 Планировщик ежедневных отчетов
@@ -111,16 +107,16 @@ def send_daily_report():
     yesterday = today - timedelta(days=1)
     stats = get_stats(yesterday, today)
     
-    msg = f"📊 <b>Отчёт за {yesterday.strftime('%d.%m.%Y')}</b>\n\n"
-    msg += f"<b>🔄 Автоматические редиректы:</b>\n"
-    msg += f"  🔄 Всего: {stats['auto_total']}\n"
-    msg += f"  👤 Уникальных: {stats['auto_unique']}\n\n"
-    msg += f"<b>🔵 Переходы по кнопке:</b>\n"
-    msg += f"  🔄 Всего: {stats['button_total']}\n"
-    msg += f"  👤 Уникальных: {stats['button_unique']}\n\n"
-    msg += f"<b>📈 Всего:</b>\n"
-    msg += f"  🔄 Всего: <b>{stats['total']}</b>\n"
-    msg += f"  👤 Уникальных: <b>{stats['unique']}</b>"
+    msg = "📊 <b>Отчёт за " + yesterday.strftime('%d.%m.%Y') + "</b>\n\n"
+    msg += "<b>🔄 Автоматические редиректы:</b>\n"
+    msg += "  🔄 Всего: " + str(stats['auto_total']) + "\n"
+    msg += "  👤 Уникальных: " + str(stats['auto_unique']) + "\n\n"
+    msg += "<b>🔵 Переходы по кнопке:</b>\n"
+    msg += "  🔄 Всего: " + str(stats['button_total']) + "\n"
+    msg += "  👤 Уникальных: " + str(stats['button_unique']) + "\n\n"
+    msg += "<b>📈 Всего:</b>\n"
+    msg += "  🔄 <b>" + str(stats['total']) + "</b>\n"
+    msg += "  👤 <b>" + str(stats['unique']) + "</b>"
     
     try:
         bot.send_message(ADMIN_CHAT_ID, msg, parse_mode="HTML")
@@ -128,7 +124,7 @@ def send_daily_report():
         print(f"❌ Не удалось отправить отчёт: {e}")
 
 # 🔹 Telegram бот
-bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
+bot = telebot.TeleBot(BOT_TOKEN)
 
 @bot.message_handler(commands=['start'])
 def cmd_start(m):
@@ -148,34 +144,28 @@ def cmd_stats(m):
         
         c.execute('SELECT COUNT(*) FROM redirects')
         total = c.fetchone()[0]
-        
         c.execute('SELECT COUNT(DISTINCT session_id) FROM redirects')
         unique = c.fetchone()[0]
-        
         c.execute("SELECT COUNT(*) FROM redirects WHERE redirect_type = 'auto'")
         auto_total = c.fetchone()[0]
-        
         c.execute("SELECT COUNT(DISTINCT session_id) FROM redirects WHERE redirect_type = 'auto'")
         auto_unique = c.fetchone()[0]
-        
         c.execute("SELECT COUNT(*) FROM redirects WHERE redirect_type = 'button'")
         button_total = c.fetchone()[0]
-        
         c.execute("SELECT COUNT(DISTINCT session_id) FROM redirects WHERE redirect_type = 'button'")
         button_unique = c.fetchone()[0]
-        
         conn.close()
         
         msg = "📊 <b>Статистика за всё время:</b>\n\n"
         msg += "<b>🔄 Автоматические редиректы:</b>\n"
-        msg += f"  🔄 Всего: {auto_total}\n"
-        msg += f"  👤 Уникальных: {auto_unique}\n\n"
+        msg += "  🔄 Всего: " + str(auto_total) + "\n"
+        msg += "  👤 Уникальных: " + str(auto_unique) + "\n\n"
         msg += "<b>🔵 Переходы по кнопке:</b>\n"
-        msg += f"  🔄 Всего: {button_total}\n"
-        msg += f"  👤 Уникальных: {button_unique}\n\n"
+        msg += "  🔄 Всего: " + str(button_total) + "\n"
+        msg += "  👤 Уникальных: " + str(button_unique) + "\n\n"
         msg += "<b>📈 Всего:</b>\n"
-        msg += f"  🔄 Всего: <b>{total}</b>\n"
-        msg += f"  👤 Уникальных: <b>{unique}</b>"
+        msg += "  🔄 <b>" + str(total) + "</b>\n"
+        msg += "  👤 <b>" + str(unique) + "</b>"
         
         bot.reply_to(m, msg, parse_mode="HTML")
 
@@ -186,16 +176,16 @@ def cmd_today(m):
         tomorrow = today_start + timedelta(days=1)
         stats = get_stats(today_start, tomorrow)
         
-        msg = "📊 <b>Статистика за сегодня:</b>\n\n"
+        msg = " <b>Статистика за сегодня:</b>\n\n"
         msg += "<b>🔄 Автоматические редиректы:</b>\n"
-        msg += f"  🔄 Всего: {stats['auto_total']}\n"
-        msg += f"  👤 Уникальных: {stats['auto_unique']}\n\n"
+        msg += "  🔄 Всего: " + str(stats['auto_total']) + "\n"
+        msg += "  👤 Уникальных: " + str(stats['auto_unique']) + "\n\n"
         msg += "<b>🔵 Переходы по кнопке:</b>\n"
-        msg += f"  🔄 Всего: {stats['button_total']}\n"
-        msg += f"  👤 Уникальных: {stats['button_unique']}\n\n"
+        msg += "  🔄 Всего: " + str(stats['button_total']) + "\n"
+        msg += "  👤 Уникальных: " + str(stats['button_unique']) + "\n\n"
         msg += "<b>📈 Всего:</b>\n"
-        msg += f"  🔄 Всего: <b>{total}</b>\n"
-        msg += f"  👤 Уникальных: <b>{unique}</b>"
+        msg += "  🔄 <b>" + str(stats['total']) + "</b>\n"
+        msg += "  👤 <b>" + str(stats['unique']) + "</b>"
         
         bot.reply_to(m, msg, parse_mode="HTML")
 
@@ -212,21 +202,21 @@ def cmd_period(m):
             end_date = datetime.strptime(parts[2], "%Y-%m-%d").replace(tzinfo=moscow_tz, hour=23, minute=59, second=59, microsecond=999999)
             stats = get_stats(start_date, end_date + timedelta(days=1))
             
-            msg = f"📊 <b>Статистика за период:</b>\n"
-            msg += f"📅 {parts[1]} — {parts[2]}\n\n"
+            msg = " <b>Статистика за период:</b>\n"
+            msg += "📅 " + parts[1] + " — " + parts[2] + "\n\n"
             msg += "<b>🔄 Автоматические редиректы:</b>\n"
-            msg += f"  🔄 Всего: {stats['auto_total']}\n"
-            msg += f"  👤 Уникальных: {stats['auto_unique']}\n\n"
+            msg += "  🔄 Всего: " + str(stats['auto_total']) + "\n"
+            msg += "  👤 Уникальных: " + str(stats['auto_unique']) + "\n\n"
             msg += "<b>🔵 Переходы по кнопке:</b>\n"
-            msg += f"  🔄 Всего: {stats['button_total']}\n"
-            msg += f"  👤 Уникальных: {stats['button_unique']}\n\n"
+            msg += "  🔄 Всего: " + str(stats['button_total']) + "\n"
+            msg += "  👤 Уникальных: " + str(stats['button_unique']) + "\n\n"
             msg += "<b>📈 Всего:</b>\n"
-            msg += f"  🔄 <b>{stats['total']}</b>\n"
-            msg += f"  👤 <b>{stats['unique']}</b>"
+            msg += "  🔄 <b>" + str(stats['total']) + "</b>\n"
+            msg += "  👤 <b>" + str(stats['unique']) + "</b>"
             
             bot.reply_to(m, msg, parse_mode="HTML")
         except Exception as e:
-            bot.reply_to(m, f"❌ <b>Ошибка:</b> {e}\n\nИспользуйте формат YYYY-MM-DD", parse_mode="HTML")
+            bot.reply_to(m, "❌ <b>Ошибка:</b> " + str(e) + "\n\nИспользуйте формат YYYY-MM-DD", parse_mode="HTML")
 
 # 🔹 FLASK сервер
 app = Flask(__name__)
@@ -241,7 +231,7 @@ def track():
     if request.method == 'OPTIONS':
         return '', 200
     
-    # Читаем все данные из URL параметров (для GET и POST)
+    # Читаем все данные из URL параметров (работает для GET и POST)
     session_id = request.args.get('session_id', 'unknown')
     platform = request.args.get('platform', 'unknown')
     watch_time = request.args.get('watch_time', 0)
@@ -271,4 +261,4 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 print("🟢 Бот запущен!")
 bot.remove_webhook()
-bot.infinity_polling(skip_pending=True)
+bot.infinity_polling()
