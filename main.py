@@ -119,8 +119,8 @@ def send_daily_report():
     msg += f"  🔄 Всего: {stats['button_total']}\n"
     msg += f"  👤 Уникальных: {stats['button_unique']}\n\n"
     msg += f"<b>📈 Всего:</b>\n"
-    msg += f"  🔄 <b>{stats['total']}</b>\n"
-    msg += f"  👤 <b>{stats['unique']}</b>"
+    msg += f"  🔄 Всего: <b>{stats['total']}</b>\n"
+    msg += f"  👤 Уникальных: <b>{stats['unique']}</b>"
     
     try:
         bot.send_message(ADMIN_CHAT_ID, msg, parse_mode="HTML")
