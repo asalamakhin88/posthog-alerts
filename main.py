@@ -108,7 +108,7 @@ def send_daily_report():
     
     msg = f"📊 <b>Отчёт за {yesterday.strftime('%d.%m.%Y')}</b>\n\n"
     msg += f"<b>🔄 Автоматические:</b>\n  🔄 {stats['auto_total']}\n  👤 {stats['auto_unique']}\n\n"
-    msg += f"<b> По кнопке:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
+    msg += f"<b>🔵 По кнопке:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
     msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
     
     try:
@@ -140,8 +140,8 @@ def cmd_handler(m):
         
         msg = f"📊 <b>За всё время:</b>\n\n"
         msg += f"<b>🔄 Авто:</b>\n  🔄 {auto_total}\n  👤 {auto_unique}\n\n"
-        msg += f"<b> Кнопка:</b>\n  🔄 {button_total}\n  👤 {button_unique}\n\n"
-        msg += f"<b> Итого:</b>\n  🔄 <b>{total}</b>\n  👤 <b>{unique}</b>"
+        msg += f"<b>🔵 Кнопка:</b>\n  🔄 {button_total}\n  👤 {button_unique}\n\n"
+        msg += f"<b>📈 Итого:</b>\n  🔄 <b>{total}</b>\n  👤 <b>{unique}</b>"
         bot.reply_to(m, msg, parse_mode="HTML")
     
     elif m.text == '/today':
@@ -150,9 +150,9 @@ def cmd_handler(m):
         stats = get_stats(today_start, tomorrow)
         
         msg = f"📊 <b>За сегодня:</b>\n\n"
-        msg += f"<b>🔄 Авто:</b>\n   {stats['auto_total']}\n   {stats['auto_unique']}\n\n"
+        msg += f"<b>🔄 Авто:</b>\n  🔄 {stats['auto_total']}\n  👤 {stats['auto_unique']}\n\n"
         msg += f"<b>🔵 Кнопка:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
-        msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n   <b>{stats['unique']}</b>"
+        msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
         bot.reply_to(m, msg, parse_mode="HTML")
     
     elif m.text.startswith('/period'):
@@ -165,7 +165,7 @@ def cmd_handler(m):
             msg = f"📊 {parts[1]} - {parts[2]}:\n\n"
             msg += f"<b>🔄 Авто:</b>\n  🔄 {stats['auto_total']}\n  👤 {stats['auto_unique']}\n\n"
             msg += f"<b>🔵 Кнопка:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
-            msg += f"<b> Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
+            msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
             bot.reply_to(m, msg, parse_mode="HTML")
 
 #  FLASK
