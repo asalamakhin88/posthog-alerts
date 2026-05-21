@@ -14,11 +14,10 @@ from psycopg2.extras import RealDictCursor
 # 🔑 НАСТРОЙКИ
 BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("⚠️ Добавьте TG_BOT_TOKEN!")
+    raise ValueError("️ Добавьте TG_BOT_TOKEN!")
 
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", 105918840))
 moscow_tz = pytz.timezone('Europe/Moscow')
-WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://posthog-alerts.onrender.com")
 
 # 🔹 PostgreSQL
 def get_db_connection():
@@ -28,138 +27,225 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
+    # Создаём таблицу, если её нет
     c.execute('''CREATE TABLE IF NOT EXISTS redirects (
                     id SERIAL PRIMARY KEY,
                     timestamp TIMESTAMP WITH TIME ZONE,
                     session_id TEXT,
                     platform TEXT,
-                    watch_time INTEGER)''')
+                    watch_time INTEGER,
+                    redirect_type TEXT DEFAULT 'auto')''')
+    
+    # Безопасно добавляем новое поле, если таблица уже существовала
+    c.execute("ALTER TABLE redirects ADD COLUMN IF NOT EXISTS redirect_type TEXT DEFAULT 'auto'")
+    
     conn.commit()
     conn.close()
-    print("✅ База данных инициализирована")
+    print("✅ База данных инициализирована / обновлена")
 
 init_db()
 
-def add_redirect(session_id, platform, watch_time):
+# 🔹 Функции работы с БД
+def add_redirect(session_id, platform, watch_time, redirect_type='auto'):
     try:
         conn = get_db_connection()
         c = conn.cursor()
         now = datetime.now(moscow_tz)
-        c.execute('''INSERT INTO redirects (timestamp, session_id, platform, watch_time) 
-                     VALUES (%s, %s, %s, %s)''', 
-                  (now, session_id, platform, watch_time))
+        c.execute('''INSERT INTO redirects (timestamp, session_id, platform, watch_time, redirect_type) 
+                     VALUES (%s, %s, %s, %s, %s)''', 
+                  (now, session_id, platform, watch_time, redirect_type))
         conn.commit()
         conn.close()
+        print(f"📥 Записано: {session_id} ({redirect_type})")
     except Exception as e:
-        print(f"❌ Ошибка БД: {e}")
+        print(f" Ошибка БД: {e}")
 
 def get_stats(start_date, end_date):
     try:
         conn = get_db_connection()
         c = conn.cursor()
+        
+        # Всего
         c.execute('SELECT COUNT(*) FROM redirects WHERE timestamp >= %s AND timestamp < %s', 
                   (start_date, end_date))
         total = c.fetchone()[0]
+        
         c.execute('SELECT COUNT(DISTINCT session_id) FROM redirects WHERE timestamp >= %s AND timestamp < %s', 
                   (start_date, end_date))
         unique = c.fetchone()[0]
+        
+        # Авто-редиректы
+        c.execute('SELECT COUNT(*) FROM redirects WHERE timestamp >= %s AND timestamp < %s AND redirect_type = %s', 
+                  (start_date, end_date, 'auto'))
+        auto_total = c.fetchone()[0]
+        
+        c.execute('SELECT COUNT(DISTINCT session_id) FROM redirects WHERE timestamp >= %s AND timestamp < %s AND redirect_type = %s', 
+                  (start_date, end_date, 'auto'))
+        auto_unique = c.fetchone()[0]
+        
+        # Кнопка
+        c.execute('SELECT COUNT(*) FROM redirects WHERE timestamp >= %s AND timestamp < %s AND redirect_type = %s', 
+                  (start_date, end_date, 'button'))
+        button_total = c.fetchone()[0]
+        
+        c.execute('SELECT COUNT(DISTINCT session_id) FROM redirects WHERE timestamp >= %s AND timestamp < %s AND redirect_type = %s', 
+                  (start_date, end_date, 'button'))
+        button_unique = c.fetchone()[0]
+        
         conn.close()
-        return total, unique
-    except:
-        return 0, 0
+        return {
+            'total': total, 'unique': unique,
+            'auto_total': auto_total, 'auto_unique': auto_unique,
+            'button_total': button_total, 'button_unique': button_unique
+        }
+    except Exception as e:
+        print(f"❌ Ошибка чтения БД: {e}")
+        return {'total': 0, 'unique': 0, 'auto_total': 0, 'auto_unique': 0, 'button_total': 0, 'button_unique': 0}
 
-# 🔹 Telegram бот (WEBHOOK вместо polling)
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+# 🔹 Планировщик ежедневного отчета (00:00 МСК)
+def check_schedule():
+    while True:
+        now = datetime.now(moscow_tz)
+        if now.strftime("%H:%M") == "00:00":
+            send_daily_report()
+            time.sleep(60)
+        time.sleep(30)
 
-@bot.message_handler(commands=['start', 'stats', 'today', 'period', 'reset'])
-def cmd_handler(m):
-    if m.chat.id != ADMIN_CHAT_ID:
-        return
+def send_daily_report():
+    today = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday = today - timedelta(days=1)
     
-    if m.text == '/start':
-        bot.reply_to(m, "🤖 Бот активен (Webhook).\n\n/stats — всё время\n/today — сегодня\n/period YYYY-MM-DD YYYY-MM-DD — период")
+    stats = get_stats(yesterday, today)
     
-    elif m.text == '/reset':
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('DELETE FROM redirects')
-        conn.commit()
-        conn.close()
-        bot.reply_to(m, "✅ База очищена!")
+    msg = f"📊 <b>Отчёт за {yesterday.strftime('%d.%m.%Y')}</b>\n\n"
+    msg += f"<b>🔄 Автоматические редиректы:</b>\n  🔄 Всего: <b>{stats['auto_total']}</b>\n  👤 Уникальных: <b>{stats['auto_unique']}</b>\n\n"
+    msg += f"<b>🔵 Переходы по кнопке:</b>\n  🔄 Всего: <b>{stats['button_total']}</b>\n  👤 Уникальных: <b>{stats['button_unique']}</b>\n\n"
+    msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n   <b>{stats['unique']}</b>"
     
-    elif m.text == '/stats':
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('SELECT COUNT(*) FROM redirects')
-        total = c.fetchone()[0]
-        c.execute('SELECT COUNT(DISTINCT session_id) FROM redirects')
-        unique = c.fetchone()[0]
-        conn.close()
-        bot.reply_to(m, f"📊 <b>Всего:</b>\n🔄 {total}\n👤 {unique}", parse_mode="HTML")
-    
-    elif m.text == '/today':
-        today = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0)
-        tomorrow = today + timedelta(days=1)
-        total, unique = get_stats(today, tomorrow)
-        bot.reply_to(m, f"📊 <b>За сегодня:</b>\n🔄 {total}\n👤 {unique}", parse_mode="HTML")
-    
-    elif m.text.startswith('/period'):
-        parts = m.text.split()
-        if len(parts) == 3:
-            start = datetime.strptime(parts[1], "%Y-%m-%d").replace(tzinfo=moscow_tz)
-            end = datetime.strptime(parts[2], "%Y-%m-%d").replace(tzinfo=moscow_tz) + timedelta(days=1)
-            total, unique = get_stats(start, end)
-            bot.reply_to(m, f"📊 {parts[1]} - {parts[2]}:\n🔄 {total}\n👤 {unique}")
+    try:
+        bot.send_message(ADMIN_CHAT_ID, msg, parse_mode="HTML")
+    except Exception as e:
+        print(f"❌ Не удалось отправить отчёт: {e}")
 
-# 🔹 FLASK
+# 🔹 Telegram бот
+bot = telebot.TeleBot(BOT_TOKEN)
+
+@bot.message_handler(commands=['start'])
+def cmd_start(m):
+    if m.chat.id == ADMIN_CHAT_ID:
+        bot.reply_to(m, "🤖 Бот активен.\n\n📊 Команды:\n/stats — за всё время\n/today — за сегодня\n/period YYYY-MM-DD YYYY-MM-DD — за период")
+
+@bot.message_handler(commands=['stats'])
+def cmd_all_stats(m):
+    if m.chat.id == ADMIN_CHAT_ID:
+        try:
+            conn = get_db_connection()
+            c = conn.cursor()
+            
+            c.execute('SELECT COUNT(*) FROM redirects'); total = c.fetchone()[0]
+            c.execute('SELECT COUNT(DISTINCT session_id) FROM redirects'); unique = c.fetchone()[0]
+            
+            c.execute("SELECT COUNT(*) FROM redirects WHERE redirect_type = 'auto'"); auto_total = c.fetchone()[0]
+            c.execute("SELECT COUNT(DISTINCT session_id) FROM redirects WHERE redirect_type = 'auto'"); auto_unique = c.fetchone()[0]
+            
+            c.execute("SELECT COUNT(*) FROM redirects WHERE redirect_type = 'button'"); button_total = c.fetchone()[0]
+            c.execute("SELECT COUNT(DISTINCT session_id) FROM redirects WHERE redirect_type = 'button'"); button_unique = c.fetchone()[0]
+            conn.close()
+            
+            msg = f"📊 <b>Всего за всё время:</b>\n\n"
+            msg += f"<b>🔄 Автоматические редиректы:</b>\n  🔄 <b>{auto_total}</b>\n  👤 <b>{auto_unique}</b>\n\n"
+            msg += f"<b>🔵 Переходы по кнопке:</b>\n  🔄 <b>{button_total}</b>\n  👤 <b>{button_unique}</b>\n\n"
+            msg += f"<b>📈 Итого:</b>\n  🔄 <b>{total}</b>\n  👤 <b>{unique}</b>"
+            bot.reply_to(m, msg, parse_mode="HTML")
+        except Exception as e:
+            bot.reply_to(m, f"❌ Ошибка: {e}")
+
+@bot.message_handler(commands=['today'])
+def cmd_today_stats(m):
+    if m.chat.id == ADMIN_CHAT_ID:
+        today_start = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_start = today_start + timedelta(days=1)
+        stats = get_stats(today_start, tomorrow_start)
+        
+        msg = f"📊 <b>Статистика за СЕГОДНЯ:</b>\n\n"
+        msg += f"<b>🔄 Автоматические редиректы:</b>\n  🔄 <b>{stats['auto_total']}</b>\n  👤 <b>{stats['auto_unique']}</b>\n\n"
+        msg += f"<b>🔵 Переходы по кнопке:</b>\n  🔄 <b>{stats['button_total']}</b>\n   <b>{stats['button_unique']}</b>\n\n"
+        msg += f"<b> Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
+        bot.reply_to(m, msg, parse_mode="HTML")
+
+@bot.message_handler(commands=['period'])
+def cmd_period_stats(m):
+    if m.chat.id == ADMIN_CHAT_ID:
+        try:
+            parts = m.text.split()
+            if len(parts) != 3:
+                bot.reply_to(m, "❌ Формат: `/period YYYY-MM-DD YYYY-MM-DD`", parse_mode="Markdown")
+                return
+            
+            start_dt = datetime.strptime(parts[1], "%Y-%m-%d").replace(tzinfo=moscow_tz, hour=0, minute=0, second=0)
+            end_dt = datetime.strptime(parts[2], "%Y-%m-%d").replace(tzinfo=moscow_tz, hour=23, minute=59, second=59) + timedelta(days=1)
+
+            stats = get_stats(start_dt, end_dt)
+            
+            msg = f"📊 <b>Период:</b> {parts[1]} — {parts[2]}\n\n"
+            msg += f"<b> Автоматические:</b>\n  🔄 <b>{stats['auto_total']}</b>\n   <b>{stats['auto_unique']}</b>\n\n"
+            msg += f"<b> Кнопка:</b>\n   <b>{stats['button_total']}</b>\n  👤 <b>{stats['button_unique']}</b>\n\n"
+            msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
+            bot.reply_to(m, msg, parse_mode="HTML")
+        except Exception as e:
+            bot.reply_to(m, f"❌ Ошибка: {e}")
+
+# 🔹 FLASK СЕРВЕР
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route('/')
 def home():
-    return "✅ Bot is alive! (Webhook mode)"
-
-# Webhook от Telegram
-@app.route(f"/{BOT_TOKEN}", methods=['POST'])
-def webhook():
-    update = telebot.types.Update.de_json(request.get_json(force=True))
-    bot.process_new_updates([update])
-    return '', 200
+    return "✅ Bot is alive!"
 
 @app.route('/track', methods=['GET', 'POST', 'OPTIONS'])
 def track_redirect():
     if request.method == 'OPTIONS':
         return '', 200
     
-    session_id = request.args.get('session_id', 'unknown') if request.method == 'GET' else \
-                 (request.get_json(force=True, silent=True) or {}).get('session_id', 'unknown')
-    platform = request.args.get('platform', 'unknown') if request.method == 'GET' else \
-               (request.get_json(force=True, silent=True) or {}).get('platform', 'unknown')
-    watch_time = request.args.get('watch_time', 0) if request.method == 'GET' else \
-                 (request.get_json(force=True, silent=True) or {}).get('watch_time', 0)
-    
-    add_redirect(session_id, platform, watch_time)
-    print(f"📥 {session_id}")
-    
+    session_id = 'unknown'
+    platform = 'unknown'
+    watch_time = 0
+    redirect_type = 'auto'
+
     if request.method == 'GET':
-        img = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
-        return send_file(io.BytesIO(img), mimetype='image/png')
-    
-    return jsonify({"ok": True})
+        session_id = request.args.get('session_id', 'unknown')
+        platform = request.args.get('platform', 'unknown')
+        watch_time = request.args.get('watch_time', 0)
+        # Если в URL есть vk_button=true → считаем как клик по кнопке
+        if request.args.get('vk_button') == 'true':
+            redirect_type = 'button'
+    elif request.method == 'POST':
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            session_id = data.get('session_id', 'unknown')
+            platform = data.get('platform', 'unknown')
+            watch_time = data.get('watch_time', 0)
+            redirect_type = 'button' if data.get('vk_button') else 'auto'
+        except:
+            pass
+
+    add_redirect(session_id, platform, watch_time, redirect_type)
+
+    if request.method == 'GET':
+        img_bytes = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return send_file(io.BytesIO(img_bytes), mimetype='image/png')
+
+    return make_response(jsonify({"ok": True}), 200)
 
 # 🔹 ЗАПУСК
-def set_webhook():
-    time.sleep(5)
-    webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(webhook_url)
-    print(f"✅ Webhook установлен: {webhook_url}")
-
-threading.Thread(target=set_webhook, daemon=True).start()
+threading.Thread(target=check_schedule, daemon=True).start()
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
+    print(f"🌐 Запуск сервера на порту {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
 
 run_flask()
+print("🟢 Бот запущен с разделением статистики!")
+bot.infinity_polling()
