@@ -108,7 +108,7 @@ def send_daily_report():
     
     msg = f"📊 <b>Отчёт за {yesterday.strftime('%d.%m.%Y')}</b>\n\n"
     msg += f"<b>🔄 Автоматические:</b>\n  🔄 {stats['auto_total']}\n  👤 {stats['auto_unique']}\n\n"
-    msg += f"<b>🔵 По кнопке:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
+    msg += f"<b> По кнопке:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
     msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
     
     try:
@@ -116,7 +116,7 @@ def send_daily_report():
     except:
         pass
 
-# 🔹 Telegram бот
+#  Telegram бот
 bot = telebot.TeleBot(BOT_TOKEN)
 
 @bot.message_handler(commands=['start', 'stats', 'today', 'period'])
@@ -125,7 +125,7 @@ def cmd_handler(m):
         return
     
     if m.text == '/start':
-        bot.reply_to(m, "🤖 Бот активен.\n/stats — всё время\n/today — сегодня\n/period YYYY-MM-DD YYYY-MM-DD")
+        bot.reply_to(m, " Бот активен.\n/stats — всё время\n/today — сегодня\n/period YYYY-MM-DD YYYY-MM-DD")
     
     elif m.text == '/stats':
         conn = get_db_connection()
@@ -140,8 +140,8 @@ def cmd_handler(m):
         
         msg = f"📊 <b>За всё время:</b>\n\n"
         msg += f"<b>🔄 Авто:</b>\n  🔄 {auto_total}\n  👤 {auto_unique}\n\n"
-        msg += f"<b>🔵 Кнопка:</b>\n  🔄 {button_total}\n  👤 {button_unique}\n\n"
-        msg += f"<b>📈 Итого:</b>\n  🔄 <b>{total}</b>\n  👤 <b>{unique}</b>"
+        msg += f"<b> Кнопка:</b>\n  🔄 {button_total}\n  👤 {button_unique}\n\n"
+        msg += f"<b> Итого:</b>\n  🔄 <b>{total}</b>\n  👤 <b>{unique}</b>"
         bot.reply_to(m, msg, parse_mode="HTML")
     
     elif m.text == '/today':
@@ -150,9 +150,9 @@ def cmd_handler(m):
         stats = get_stats(today_start, tomorrow)
         
         msg = f"📊 <b>За сегодня:</b>\n\n"
-        msg += f"<b>🔄 Авто:</b>\n  🔄 {stats['auto_total']}\n  👤 {stats['auto_unique']}\n\n"
+        msg += f"<b>🔄 Авто:</b>\n   {stats['auto_total']}\n   {stats['auto_unique']}\n\n"
         msg += f"<b>🔵 Кнопка:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
-        msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
+        msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n   <b>{stats['unique']}</b>"
         bot.reply_to(m, msg, parse_mode="HTML")
     
     elif m.text.startswith('/period'):
@@ -165,10 +165,10 @@ def cmd_handler(m):
             msg = f"📊 {parts[1]} - {parts[2]}:\n\n"
             msg += f"<b>🔄 Авто:</b>\n  🔄 {stats['auto_total']}\n  👤 {stats['auto_unique']}\n\n"
             msg += f"<b>🔵 Кнопка:</b>\n  🔄 {stats['button_total']}\n  👤 {stats['button_unique']}\n\n"
-            msg += f"<b>📈 Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
+            msg += f"<b> Всего:</b>\n  🔄 <b>{stats['total']}</b>\n  👤 <b>{stats['unique']}</b>"
             bot.reply_to(m, msg, parse_mode="HTML")
 
-# 🔹 FLASK
+#  FLASK
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
@@ -210,4 +210,6 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 print("🟢 Бот запущен!")
+# 🔹 УДАЛЯЕМ WEBHOOK ЧТОБЫ РАБОТАЛ POLLING
+bot.remove_webhook()
 bot.infinity_polling()
