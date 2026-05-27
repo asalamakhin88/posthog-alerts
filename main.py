@@ -51,51 +51,50 @@ def add_redirect(session_id, platform, watch_time, redirect_type='auto', video_i
     except Exception as e:
         print(f"❌ Ошибка БД: {e}")
 
+# 🔹 Утилиты
+def format_watch_time(seconds):
+    if not seconds or seconds < 0:
+        return "0 сек"
+    m = int(seconds // 60)
+    s = int(seconds % 60)
+    return f"{m} мин {s} сек" if m > 0 else f"{s} сек"
+
 def get_stats(start_date, end_date, video_id=None):
     try:
         conn = get_db_connection()
         c = conn.cursor()
         
-        # Базовые запросы
         if video_id and video_id != 'all':
-            base_query = ' WHERE timestamp >= %s AND timestamp < %s AND video_id = %s'
+            where = "WHERE timestamp >= %s AND timestamp < %s AND video_id = %s"
             params = (start_date, end_date, video_id)
-            params_distinct = (start_date, end_date, video_id)
         else:
-            base_query = ' WHERE timestamp >= %s AND timestamp < %s'
+            where = "WHERE timestamp >= %s AND timestamp < %s"
             params = (start_date, end_date)
-            params_distinct = (start_date, end_date)
         
-        c.execute(f'SELECT COUNT(*) FROM redirects{base_query}', params)
-        total = c.fetchone()[0]
+        # Общие + среднее время
+        c.execute(f'SELECT COUNT(*), COUNT(DISTINCT session_id), AVG(watch_time) FROM redirects {where}', params)
+        total, unique, avg_time = c.fetchone()
+        avg_time = avg_time or 0
         
-        c.execute(f'SELECT COUNT(DISTINCT session_id) FROM redirects{base_query}', params_distinct)
-        unique = c.fetchone()[0]
+        # Авто
+        c.execute(f'SELECT COUNT(*), COUNT(DISTINCT session_id) FROM redirects {where} AND redirect_type = %s', params + ('auto',))
+        auto_total, auto_unique = c.fetchone()
         
-        c.execute(f'SELECT COUNT(*) FROM redirects{base_query} AND redirect_type = %s', params + ('auto',))
-        auto_total = c.fetchone()[0]
-        
-        c.execute(f'SELECT COUNT(DISTINCT session_id) FROM redirects{base_query} AND redirect_type = %s', params_distinct + ('auto',))
-        auto_unique = c.fetchone()[0]
-        
-        c.execute(f'SELECT COUNT(*) FROM redirects{base_query} AND redirect_type = %s', params + ('button',))
-        button_total = c.fetchone()[0]
-        
-        c.execute(f'SELECT COUNT(DISTINCT session_id) FROM redirects{base_query} AND redirect_type = %s', params_distinct + ('button',))
-        button_unique = c.fetchone()[0]
+        # Кнопка
+        c.execute(f'SELECT COUNT(*), COUNT(DISTINCT session_id) FROM redirects {where} AND redirect_type = %s', params + ('button',))
+        button_total, button_unique = c.fetchone()
         
         conn.close()
         return {
-            'total': total, 'unique': unique,
+            'total': total, 'unique': unique, 'avg_time': avg_time,
             'auto_total': auto_total, 'auto_unique': auto_unique,
             'button_total': button_total, 'button_unique': button_unique
         }
     except Exception as e:
         print(f"❌ Ошибка: {e}")
-        return {'total': 0, 'unique': 0, 'auto_total': 0, 'auto_unique': 0, 'button_total': 0, 'button_unique': 0}
+        return {'total': 0, 'unique': 0, 'avg_time': 0, 'auto_total': 0, 'auto_unique': 0, 'button_total': 0, 'button_unique': 0}
 
 def get_all_videos_stats(start_date, end_date):
-    """Получить статистику по всем видео"""
     try:
         conn = get_db_connection()
         c = conn.cursor()
@@ -104,10 +103,7 @@ def get_all_videos_stats(start_date, end_date):
         videos = [row[0] for row in c.fetchall()]
         conn.close()
         
-        video_stats = {}
-        for vid in videos:
-            video_stats[vid] = get_stats(start_date, end_date, vid)
-        return video_stats
+        return {vid: get_stats(start_date, end_date, vid) for vid in videos}
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return {}
@@ -127,12 +123,11 @@ def send_daily_report():
     video_stats = get_all_videos_stats(yesterday, today)
     
     msg = f"📊 <b>Отчёт за {yesterday.strftime('%d.%m.%Y')}</b>\n\n"
-    
-    for vid, stats in video_stats.items():
-        msg += f"<b>🎬 Видео: {vid}</b>\n"
-        msg += f"  🔄 Авто: {stats['auto_total']} | 👤 {stats['auto_unique']}\n"
-        msg += f"  🔵 Кнопка: {stats['button_total']} | 👤 {stats['button_unique']}\n"
-        msg += f"  📈 Всего: <b>{stats['total']}</b> | 👤 <b>{stats['unique']}</b>\n\n"
+    for vid, s in video_stats.items():
+        msg += f"<b>🎬 {vid}</b>\n"
+        msg += f"  🔄 Авто: {s['auto_total']} | 👤 {s['auto_unique']} | ⏱ {format_watch_time(s['avg_time'])}\n"
+        msg += f"  🔵 Кнопка: {s['button_total']} | 👤 {s['button_unique']}\n"
+        msg += f"  📈 Всего: <b>{s['total']}</b> | 👤 <b>{s['unique']}</b>\n\n"
     
     try:
         bot.send_message(ADMIN_CHAT_ID, msg, parse_mode="HTML")
@@ -142,58 +137,46 @@ def send_daily_report():
 # 🔹 Telegram бот
 bot = telebot.TeleBot(BOT_TOKEN)
 
+def fmt_stats_block(s):
+    return (f"  🔄 Авто: {s['auto_total']} | 👤 {s['auto_unique']} | ⏱ {format_watch_time(s['avg_time'])}\n"
+            f"   Кнопка: {s['button_total']} | 👤 {s['button_unique']}\n"
+            f"  📈 Всего: <b>{s['total']}</b> | 👤 <b>{s['unique']}</b>")
+
 @bot.message_handler(commands=['start'])
 def cmd_start(m):
     if m.chat.id == ADMIN_CHAT_ID:
         msg = "🤖 <b>Бот аналитики видео</b>\n\n"
         msg += "<b>Команды:</b>\n"
-        msg += "/today — статистика за сегодня\n"
-        msg += "/stats — статистика за всё время\n"
-        msg += "/video VIDEO_ID — статистика по конкретному видео\n"
-        msg += "/all — все видео со статистикой"
+        msg += "/today — за сегодня\n"
+        msg += "/stats — за всё время\n"
+        msg += "/video VIDEO_ID — по конкретному видео\n"
+        msg += "/period YYYY-MM-DD YYYY-MM-DD — за период\n"
+        msg += "/all — все видео кратко"
         bot.reply_to(m, msg, parse_mode="HTML")
 
 @bot.message_handler(commands=['today'])
 def cmd_today(m):
     if m.chat.id == ADMIN_CHAT_ID:
-        today_start = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow = today_start + timedelta(days=1)
-        video_stats = get_all_videos_stats(today_start, tomorrow)
-        
+        t = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        stats = get_all_videos_stats(t, t + timedelta(days=1))
         msg = "📊 <b>Статистика за сегодня:</b>\n\n"
-        for vid, stats in video_stats.items():
-            msg += f"<b>🎬 {vid}</b>\n"
-            msg += f"  🔄 Авто: {stats['auto_total']} | 👤 {stats['auto_unique']}\n"
-            msg += f"  🔵 Кнопка: {stats['button_total']} | 👤 {stats['button_unique']}\n"
-            msg += f"  📈 Всего: <b>{stats['total']}</b> | 👤 <b>{stats['unique']}</b>\n\n"
-        
-        if not video_stats:
-            msg += "Нет данных за сегодня"
-        
+        msg += "\n".join(f"<b>🎬 {v}</b>\n{fmt_stats_block(s)}" for v, s in stats.items()) or "Нет данных"
         bot.reply_to(m, msg, parse_mode="HTML")
 
 @bot.message_handler(commands=['stats'])
 def cmd_stats(m):
     if m.chat.id == ADMIN_CHAT_ID:
-        # Статистика за всё время
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('SELECT MIN(timestamp) FROM redirects')
-        first_record = c.fetchone()[0]
+        first = c.fetchone()[0]
         conn.close()
         
-        if first_record:
-            start_date = first_record.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = datetime.now(moscow_tz) + timedelta(days=1)
-            video_stats = get_all_videos_stats(start_date, end_date)
-            
+        if first:
+            start = first.replace(hour=0, minute=0, second=0, microsecond=0)
+            stats = get_all_videos_stats(start, datetime.now(moscow_tz) + timedelta(days=1))
             msg = "📊 <b>Статистика за всё время:</b>\n\n"
-            for vid, stats in video_stats.items():
-                msg += f"<b>🎬 {vid}</b>\n"
-                msg += f"  🔄 Авто: {stats['auto_total']} | 👤 {stats['auto_unique']}\n"
-                msg += f"  🔵 Кнопка: {stats['button_total']} | 👤 {stats['button_unique']}\n"
-                msg += f"  📈 Всего: <b>{stats['total']}</b> | 👤 <b>{stats['unique']}</b>\n\n"
-            
+            msg += "\n".join(f"<b>🎬 {v}</b>\n{fmt_stats_block(s)}" for v, s in stats.items())
             bot.reply_to(m, msg, parse_mode="HTML")
         else:
             bot.reply_to(m, "📊 Пока нет данных")
@@ -203,55 +186,51 @@ def cmd_video(m):
     if m.chat.id == ADMIN_CHAT_ID:
         parts = m.text.split()
         if len(parts) != 2:
-            bot.reply_to(m, "❌ <b>Ошибка:</b> Используйте\n/video VIDEO_ID\n\nПример:\n/video video1", parse_mode="HTML")
+            bot.reply_to(m, "❌ Формат: /video VIDEO_ID\nПример: /video promo1", parse_mode="HTML")
             return
         
-        video_id = parts[1]
-        
-        # За всё время
+        vid = parts[1]
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute('SELECT MIN(timestamp) FROM redirects WHERE video_id = %s', (video_id,))
-        first_record = c.fetchone()[0]
+        c.execute('SELECT MIN(timestamp) FROM redirects WHERE video_id = %s', (vid,))
+        first = c.fetchone()[0]
         conn.close()
         
-        if first_record:
-            start_date = first_record.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = datetime.now(moscow_tz) + timedelta(days=1)
-            stats = get_stats(start_date, end_date, video_id)
-            
-            msg = f"📊 <b>Статистика по видео: {video_id}</b>\n\n"
-            msg += "<b>🔄 Автоматические редиректы:</b>\n"
-            msg += f"  🔄 Всего: {stats['auto_total']}\n"
-            msg += f"  👤 Уникальных: {stats['auto_unique']}\n\n"
-            msg += "<b>🔵 Переходы по кнопке:</b>\n"
-            msg += f"  🔄 Всего: {stats['button_total']}\n"
-            msg += f"  👤 Уникальных: {stats['button_unique']}\n\n"
-            msg += "<b>📈 Всего:</b>\n"
-            msg += f"  🔄 <b>{stats['total']}</b>\n"
-            msg += f"  👤 <b>{stats['unique']}</b>"
-            
+        if first:
+            start = first.replace(hour=0, minute=0, second=0, microsecond=0)
+            s = get_stats(start, datetime.now(moscow_tz) + timedelta(days=1), vid)
+            msg = f"📊 <b>Видео: {vid}</b>\n\n{fmt_stats_block(s)}"
             bot.reply_to(m, msg, parse_mode="HTML")
         else:
-            bot.reply_to(m, f"📊 Нет данных для видео: {video_id}")
+            bot.reply_to(m, f"📊 Нет данных для: {vid}")
+
+@bot.message_handler(commands=['period'])
+def cmd_period(m):
+    if m.chat.id == ADMIN_CHAT_ID:
+        parts = m.text.split()
+        if len(parts) != 3:
+            bot.reply_to(m, "❌ Формат: /period YYYY-MM-DD YYYY-MM-DD\nПример: /period 2024-05-01 2024-05-20", parse_mode="HTML")
+            return
+        try:
+            start = datetime.strptime(parts[1], "%Y-%m-%d").replace(tzinfo=moscow_tz)
+            end = datetime.strptime(parts[2], "%Y-%m-%d").replace(tzinfo=moscow_tz) + timedelta(days=1)
+            stats = get_all_videos_stats(start, end)
+            msg = f"📊 <b>Период: {parts[1]} — {parts[2]}</b>\n\n"
+            msg += "\n".join(f"<b> {v}</b>\n{fmt_stats_block(s)}" for v, s in stats.items()) or "Нет данных"
+            bot.reply_to(m, msg, parse_mode="HTML")
+        except Exception as e:
+            bot.reply_to(m, f"❌ Ошибка: {e}", parse_mode="HTML")
 
 @bot.message_handler(commands=['all'])
 def cmd_all(m):
     if m.chat.id == ADMIN_CHAT_ID:
-        today_start = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow = today_start + timedelta(days=1)
-        video_stats = get_all_videos_stats(today_start, tomorrow)
-        
-        msg = "📊 <b>Все видео (за сегодня):</b>\n\n"
-        for vid, stats in video_stats.items():
-            msg += f"<b>🎬 {vid}</b>: {stats['total']} ({stats['unique']} uniq)\n"
-        
-        if not video_stats:
-            msg += "Нет активных видео"
-        
+        t = datetime.now(moscow_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        stats = get_all_videos_stats(t, t + timedelta(days=1))
+        msg = "📊 <b>Все видео (сегодня):</b>\n\n"
+        msg += "\n".join(f"<b>🎬 {v}</b>: {s['total']} ({s['unique']} uniq) |  {format_watch_time(s['avg_time'])}" for v, s in stats.items()) or "Нет активных видео"
         bot.reply_to(m, msg, parse_mode="HTML")
 
-# 🔹 FLASK сервер
+# 🔹 FLASK
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
